@@ -1,32 +1,22 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import cv2, rospy, numpy as np
+import cv2, numpy as np
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-from xycar_msgs.msg import laneinfo
 from xycar_msgs.msg import XycarMotor
+
 
 
 class LaneDetect:
     def __init__(self):
         self.bridge = CvBridge()
-        rospy.init_node('lane_detection_node', anonymous=False)
-
-        # ROS Subscriber & Publisher
-        rospy.Subscriber('/usb_cam/image_raw/', Image, self.camera_callback, queue_size=1)
-        self.pub = rospy.Publisher("xycar_motor", XycarMotor, queue_size=1)
         
-        self.max_steer = np.radians(25)  # 최대 조향 각도 (라디안)
-        self.lane_width = 1.0  # 차선 폭 (meters)
+        self.max_steer = np.radians(100)  # 최대 조향 각도 (라디안)
+        self.lane_width = 0.5  # 차선 폭 (meters)
         self.k_e = 0.3         # 크로스트랙 에러 게인 (조절 가능)
         self.k_v = 1.0         # 속도 게인 (필요 시 조절)
         self.base_speed = 3.0  # 기본 속도
-
-    def camera_callback(self, data):
-        img = self.bridge.imgmsg_to_cv2(data, desired_encoding="bgr8")
-        lane_info = self.process_image(img)
-        self.pub.publish(lane_info)
 
     def warpping(self, image):
         # 좌상 -> 좌하 -> 우상 -> 우하
@@ -151,64 +141,41 @@ class LaneDetect:
             return throttle_out, steer_out
 
         except Exception as e:
-            rospy.logwarn(f"[Stanley] Control error: {e}")
             return 0.0, 0.0
 
-    def process_image(self, img):
-        # Step 1: BEV 변환
-        warpped_img = self.warpping(img)
+    # compute_lane_control 함수 추가
+    def compute_lane_control(self, image):
+        # 기존 process_image 내용 재사용
+        warped = self.warpping(image)
+        blurred = cv2.GaussianBlur(warped, (0, 0), 1)
+        filtered = self.color_filter(blurred)
+        gray = cv2.cvtColor(filtered, cv2.COLOR_BGR2GRAY)
+        _, binary = cv2.threshold(gray, 170, 255, cv2.THRESH_BINARY)
+        left_base, right_base = self.plothistogram(binary)
+        draw_info, out_img = self.slide_window_search(binary, left_base, right_base)
 
-        # Step 2: Blurring을 통해 노이즈를 제거
-        blurred_img = cv2.GaussianBlur(warpped_img, (0, 0), 1)
+        # 좌우 차선 좌표 기준 중심 계산
+        left_x = 125.0 - draw_info['left_fitx'][-1]
+        right_x = draw_info['right_fitx'][-1] - 125.0
+        center_x = (left_x + right_x) / 2.0
 
-        # Step 3: 색상 필터링 및 이진화
-        filtered_img = self.color_filter(blurred_img)
-        gray_img = cv2.cvtColor(filtered_img, cv2.COLOR_BGR2GRAY)
-        _, binary_img = cv2.threshold(gray_img, 170, 255, cv2.THRESH_BINARY)
+        # 각도 계산
+        y = draw_info['ploty'][-1]
+        slope_l = 2 * draw_info['left_fitx'][0] * y + draw_info['left_fitx'][1]
+        slope_r = 2 * draw_info['right_fitx'][0] * y + draw_info['right_fitx'][1]
+        heading = np.arctan((slope_l + slope_r) / 2)
 
-        # Step 4: 히스토그램
-        left_base, right_base = self.plothistogram(binary_img)
-        # # 히스토그램 관찰용
-        # hist_img = np.zeros((450, 260, 3), dtype=np.uint8) 
-        # hist_norm = hist * (450.0 / hist.max())
-        # for x, y in enumerate(hist_norm):
-        #     cv2.line(hist_img, (x, 450), (x, 450 - int(y)), (0, 255, 0), 1)
-        # cv2.imshow("Histogram", hist_img)
+        # Stanley 제어
+        cte = center_x / 125.0 * (self.lane_width / 2)
+        steer_correction = np.arctan2(self.k_e * cte, self.k_v + self.base_speed)
+        steer = heading + steer_correction
+        steer = np.clip(steer, -self.max_steer, self.max_steer)
 
-        # Step 5: 슬라이딩 윈도우
-        draw_info, out_img = self.slide_window_search(binary_img, left_base, right_base)
-        
-        # 디버깅용
-        cv2.imshow("raw_img",img)
-        #cv2.imshow("bird_img",warpped_img)
-        #cv2.imshow('blur_img', blurred_img)
-        cv2.imshow("filter_img",filtered_img)
-        # cv2.imshow("gray_img",gray_img)
-        #cv2.imshow("binary_img",binary_img)
-        cv2.imshow("result_img", out_img)
-        cv2.waitKey(1)
+        cv2.imshow("warped", warped)
+        cv2.imshow("filtered", filtered)
+        cv2.imshow("out_img", out_img)
+        return - np.degrees(-steer) * (100 / 20)  # angle: degree scale
 
-        # Step 6: ROS 메시지 생성 및 발행
-        #lane_info_out = laneinfo()
-
-        # 왼쪽 차선 정보
-        #lane_info_out.left_x = 130.0 - np.float32(draw_info['left_fitx'][-1])  
-        #lane_info_out.left_y = np.float32(draw_info['ploty'][-1])  
-        #slope_left = 2 * draw_info['left_fitx'][0] * lane_info_out.left_y + draw_info['left_fitx'][1]  # 기울기
-        #lane_info_out.left_slope = np.float32(np.arctan(slope_left))  # 라디안 변환
-
-        # 오른쪽 차선 정보
-        #lane_info_out.right_x = np.float32(draw_info['right_fitx'][-1]) - 130.0
-        #lane_info_out.right_y = np.float32(draw_info['ploty'][-1])  
-        #slope_right = 2 * draw_info['right_fitx'][0] * lane_info_out.right_y + draw_info['right_fitx'][1]  # 기울기
-        #lane_info_out.right_slope = np.float32(np.arctan(slope_right))  # 라디안 변환
-
-        #throttle, steer = self.stanley_control(lane_info_out)
-        #pub_msg = XycarMotor()
-        #pub_msg.speed = throttle
-        #pub_msg.angle = -np.degrees(steer) * (100 / 20) #-0.1~0.1
-        #return pub_msg
 
 if __name__ == "__main__":
     LaneDetect()
-    rospy.spin()

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*- 2
+# -*- coding: utf-8 -*- 
+# track_drive.py
 #=============================================
 # 본 프로그램은 2025 제8회 국민대 자율주행 경진대회에서
 # 예선과제를 수행하기 위한 파일입니다. 
@@ -9,12 +10,21 @@
 #=============================================
 import numpy as np
 import cv2, rospy, time, os, math
-from sensor_msgs.msg import Image 
+from sensor_msgs.msg import Image
 from xycar_msgs.msg import XycarMotor
-from xycar_msgs.msg import laneinfo
 from cv_bridge import CvBridge
 from sensor_msgs.msg import LaserScan
 import matplotlib.pyplot as plt
+
+#=============================================
+# 사용할 모듈 import
+#=============================================
+from traffic_light_detector import detect_traffic_light
+from motor_util import publish_drive, adjust_speed_by_angle
+from cone_steering import follow_cone_path_with_lidar
+from cone_steering import is_cone_section
+from line_detect import LaneDetect
+
 
 #=============================================
 # 프로그램에서 사용할 변수, 저장공간 선언부
@@ -27,6 +37,7 @@ Fix_Speed = 10  # 모터 속도 고정 상수값
 new_angle = 0  # 모터 조향각 초기값
 new_speed = Fix_Speed  # 모터 속도 초기값
 bridge = CvBridge()  # OpenCV 함수를 사용하기 위한 브릿지 
+start_signal_received = False  # FSM 상태
 
 #=============================================
 # 라이다 스캔정보로 그림을 그리기 위한 변수
@@ -40,162 +51,9 @@ lidar_points, = ax.plot([], [], 'bo')
 #=============================================
 # 콜백함수 - 카메라 토픽을 처리하는 콜백함수
 #=============================================
-class LaneDetect:
-    def __init__(self):
-        self.bridge = CvBridge()
-        #rospy.init_node('lane_detection_node', anonymous=False)
-
-        # ROS Subscriber & Publisher
-        rospy.Subscriber('/usb_cam/image_raw/', Image, self.camera_callback, queue_size=1)
-        #self.pub = rospy.Publisher("lane_info", laneinfo, queue_size=1)
-
-    def camera_callback(self, data):
-        img = self.bridge.imgmsg_to_cv2(data, desired_encoding="bgr8")
-        self.lane_info = self.process_image(img)
-        
-    def get_lane_info(self):
-        return self.lane_info  # 언제든 꺼내 쓸 수 있도록 getter 메서드 제공
-
-    def warpping(self, image):
-        source = np.float32([[1, 475], [631, 575], [253, 278], [385, 269]])
-        destination = np.float32([[0, 0], [250, 0], [0, 460], [250, 460]])
-        transform_matrix = cv2.getPerspectiveTransform(source, destination)
-        bird_image = cv2.warpPerspective(image, transform_matrix, (250, 460))
-        return bird_image
-
-    def color_filter(self, image):
-        lower = np.array([230, 230, 230])
-        upper = np.array([255, 255, 255])
-        white_mask = cv2.inRange(image, lower, upper)
-        masked = cv2.bitwise_and(image, image, mask=white_mask)
-        return masked
-
-    def plothistogram(self, image):
-        histogram = np.sum(image[image.shape[0]//2:, :], axis=0)
-        midpoint = np.int_(histogram.shape[0]/2)
-        leftbase = np.argmax(histogram[:midpoint])
-        rightbase = np.argmax(histogram[midpoint:]) + midpoint
-        return leftbase, rightbase, histogram
-
-    def slide_window_search(self, binary_warped, left_current, right_current):
-        nwindows = 15
-        window_height = np.int_(binary_warped.shape[0] / nwindows) 
-        nonzero = binary_warped.nonzero()
-        nonzero_y = np.array(nonzero[0])
-        nonzero_x = np.array(nonzero[1])
-        margin = 30
-        minpix = 10  
-        left_lane = []
-        right_lane = []
-
-        out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
-
-        for w in range(nwindows):
-            win_y_low = binary_warped.shape[0] - (w + 1) * window_height
-            win_y_high = binary_warped.shape[0] - w * window_height
-            win_xleft_low = left_current - margin
-            win_xleft_high = left_current + margin
-            win_xright_low = right_current - margin
-            win_xright_high = right_current + margin
-
-            cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
-            cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
-
-            good_left = ((nonzero_y >= win_y_low) & (nonzero_y < win_y_high) & 
-                        (nonzero_x >= win_xleft_low) & (nonzero_x < win_xleft_high)).nonzero()[0]
-            good_right = ((nonzero_y >= win_y_low) & (nonzero_y < win_y_high) & 
-                        (nonzero_x >= win_xright_low) & (nonzero_x < win_xright_high)).nonzero()[0]
-
-            if len(good_left) > minpix:
-                left_lane.append(good_left)
-                left_current = np.int_(np.mean(nonzero_x[good_left]))  
-
-            if len(good_right) > minpix:
-                right_lane.append(good_right)
-                right_current = np.int_(np.mean(nonzero_x[good_right]))
-
-        left_lane = np.concatenate(left_lane) if len(left_lane) > 0 else np.array([])
-        right_lane = np.concatenate(right_lane) if len(right_lane) > 0 else np.array([])
-        leftx = nonzero_x[left_lane] if len(left_lane) > 0 else np.array([])
-        lefty = nonzero_y[left_lane] if len(left_lane) > 0 else np.array([])
-        rightx = nonzero_x[right_lane] if len(right_lane) > 0 else np.array([])
-        righty = nonzero_y[right_lane] if len(right_lane) > 0 else np.array([])
-
-        if len(leftx) > 0 and len(lefty) > 0:
-            left_fit = np.polyfit(lefty, leftx, 1)
-        else:
-            left_fit = [0, 0]
-
-        if len(rightx) > 0 and len(righty) > 0:
-            right_fit = np.polyfit(righty, rightx, 1)
-        else:
-            right_fit = [0, 0]
-
-        ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
-        left_fitx = left_fit[0] * ploty + left_fit[1]
-        right_fitx = right_fit[0] * ploty + right_fit[1]
-
-        for i in range(len(ploty)):
-            cv2.circle(out_img, (int(left_fitx[i]), int(ploty[i])), 1, (255, 255, 0), -1)
-            cv2.circle(out_img, (int(right_fitx[i]), int(ploty[i])), 1, (255, 255, 0), -1)
-
-        return {'left_fitx': left_fitx, 'right_fitx': right_fitx, 'ploty': ploty}, out_img
-
-
-
-
-    def process_image(self, img):
-        # Step 1: BEV 변환
-        warpped_img = self.warpping(img)
-
-        # Step 2: Blurring을 통해 노이즈를 제거
-        blurred_img = cv2.GaussianBlur(warpped_img, (0, 0), 1)
-
-        # Step 3: 색상 필터링 및 이진화
-        filtered_img = self.color_filter(blurred_img)
-        gray_img = cv2.cvtColor(filtered_img, cv2.COLOR_BGR2GRAY)
-        _, binary_img = cv2.threshold(gray_img, 170, 255, cv2.THRESH_BINARY)
-
-        # Step 4: 히스토그램
-        left_base, right_base, hist = self.plothistogram(binary_img)
-        # # 히스토그램 관찰용
-        # hist_img = np.zeros((450, 260, 3), dtype=np.uint8) 
-        # hist_norm = hist * (450.0 / hist.max())
-        # for x, y in enumerate(hist_norm):
-        #     cv2.line(hist_img, (x, 450), (x, 450 - int(y)), (0, 255, 0), 1)
-        # cv2.imshow("Histogram", hist_img)
-
-        # Step 5: 슬라이딩 윈도우
-        draw_info, out_img = self.slide_window_search(binary_img, left_base, right_base)
-
-        # Step 6: ROS 메시지 생성 및 발행
-        pub_msg = laneinfo()
-
-        # 왼쪽 차선 정보
-        pub_msg.left_x = 130.0 - np.float32(draw_info['left_fitx'][-1])  
-        pub_msg.left_y = np.float32(draw_info['ploty'][-1])  
-        slope_left = 2 * draw_info['left_fitx'][0] * pub_msg.left_y + draw_info['left_fitx'][1]  # 기울기
-        pub_msg.left_slope = np.float32(np.arctan(slope_left))  # 라디안 변환
-
-        # 오른쪽 차선 정보
-        pub_msg.right_x = np.float32(draw_info['right_fitx'][-1]) - 130.0
-        pub_msg.right_y = np.float32(draw_info['ploty'][-1])  
-        slope_right = 2 * draw_info['right_fitx'][0] * pub_msg.right_y + draw_info['right_fitx'][1]  # 기울기
-        pub_msg.right_slope = np.float32(np.arctan(slope_right))  # 라디안 변환
-
-        # 디버깅용
-        #cv2.imshow("raw_img",img)
-        # cv2.imshow("bird_img",warpped_img)
-        # cv2.imshow('blur_img', blurred_img)
-        #cv2.imshow("filter_img",filtered_img)
-        # cv2.imshow("gray_img",gray_img)
-        # cv2.imshow("binary_img",binary_img)
-        cv2.imshow("result_img", out_img)
-        cv2.waitKey(1)
-        return pub_msg
-#def usbcam_callback(data):
-#    global image
-#    image = bridge.imgmsg_to_cv2(data, "bgr8")
+def usbcam_callback(data):
+    global image
+    image = bridge.imgmsg_to_cv2(data, "bgr8")
    
 #=============================================
 # 콜백함수 - 라이다 토픽을 받아서 처리하는 콜백함수
@@ -203,14 +61,6 @@ class LaneDetect:
 def lidar_callback(data):
     global ranges    
     ranges = data.ranges[0:360]
-	
-#=============================================
-# 모터로 토픽을 발행하는 함수 
-#=============================================
-def drive(angle, speed):
-    motor_msg.angle = float(angle)
-    motor_msg.speed = float(speed)
-    motor.publish(motor_msg)
              
 #=============================================
 # 실질적인 메인 함수 
@@ -218,6 +68,7 @@ def drive(angle, speed):
 def start():
 
     global motor, image, ranges
+    global start_signal_received
     
     print("Start program --------------")
 
@@ -225,11 +76,11 @@ def start():
     # 노드를 생성하고, 구독/발행할 토픽들을 선언합니다.
     #=========================================
     rospy.init_node('Track_Driver')
-    #rospy.Subscriber("/usb_cam/image_raw/",Image,usbcam_callback, queue_size=1)
-    #이거 대신에
-    image = LaneDetect()
+    rospy.Subscriber("/usb_cam/image_raw/",Image,usbcam_callback, queue_size=1)
     rospy.Subscriber("/scan", LaserScan, lidar_callback, queue_size=1)
     motor = rospy.Publisher('xycar_motor', XycarMotor, queue_size=1)
+
+    lane_detector = LaneDetect()
         
     #=========================================
     # 노드들로부터 첫번째 토픽들이 도착할 때까지 기다립니다.
@@ -253,25 +104,113 @@ def start():
     #=========================================
     # 메인 루프 
     #=========================================
+    # FSM 초기 상태: 신호등 대기
+    state = "WAIT_FOR_GREEN"
+
+    # 라바콘 진입 시점 기록 변수 (연속 조건 확인용)
+    cone_start_time = None
+
+    # Lidar 데이터 디버깅용 로그
+    # def print_closest_angle(ranges):
+    #     ranges = np.array(ranges)
+    #     ranges = np.where(np.isnan(ranges), 100.0, ranges)
+    #     ranges = np.where(ranges < 1.0, 100.0, ranges)  # 차체 무시
+    #     i = np.argmin(ranges)
+    #     print(f"[DEBUG] Closest point: angle={i}°, distance={ranges[i]:.2f}m")
+
+    # ROS 메인 루프 시작
     while not rospy.is_shutdown():
 
-        #gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        #cv2.imshow("original", image)
-        #cv2.imshow("gray", gray)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        cv2.imshow("original", image)
+        cv2.imshow("gray", gray)
 
-        if ranges is not None:            
-            angles = np.linspace(0,2*np.pi, len(ranges))+np.pi/2
-            x = ranges * np.cos(angles)
-            y = ranges * np.sin(angles)
-
-            lidar_points.set_data(x, y)
-            fig.canvas.draw_idle()
-            plt.pause(0.01)  
-            
-        drive(angle=0.0, speed=10.0)
-        time.sleep(0.1)
-        
         cv2.waitKey(1)
+
+        if ranges is not None:      
+                    # print(f"[DEBUG] min_range: {np.nanmin(ranges):.2f}, max_range: {np.nanmax(ranges):.2f}")
+                    # left_d = np.mean(ranges[270:330])
+                    # right_d = np.mean(ranges[30:90])
+                    # print(f"[DEBUG] left_d: {left_d:.2f}, right_d: {right_d:.2f}") 
+                    # print_closest_angle(ranges)
+                    # is_cone_detection 디버깅용 로그 출력     
+                    angles = np.linspace(0,2*np.pi, len(ranges))+np.pi/2
+                    x = ranges * np.cos(angles)
+                    y = ranges * np.sin(angles)
+
+                    lidar_points.set_data(x, y)
+                    fig.canvas.draw_idle()
+                    plt.pause(0.01) 
+        
+        # 신호등 상태 확인
+        if state == "WAIT_FOR_GREEN":
+            light = detect_traffic_light(image)
+            print(f"Traffic Light: {light}")
+            angle = 0.0 
+            speed = 0.0 # 정지 대기
+            if light == "GREEN":
+                state = "STRAIGHT_LANE_FOLLOW"  # 초록불이면 다음 상태로 전이
+            else:
+                publish_drive(motor, angle=0.0, speed=0.0)  # 정지
+                time.sleep(0.1)
+                continue
+
+        # -------------------------------
+        # FSM 상태: 직진 차선 주행 상태
+        # CONE_DRIVE 전이 전까지 직진진
+        # 일정 시간 이상 라바콘이 감지되면 CONE_DRIVE 전이
+        # -------------------------------
+        elif state == "STRAIGHT_LANE_FOLLOW":
+            cone_detected = is_cone_section(ranges)
+            print(f"→ Cone Detected: {cone_detected}")  # 디버깅용
+            if is_cone_section(ranges):  # 좌우 cone이 가까운 위치에 동시에 존재하는지 판단
+                if cone_start_time is None:
+                    cone_start_time = time.time()  # cone 감지 시작 시점 저장
+                elif time.time() - cone_start_time > 0.5:
+                    state = "CONE_DRIVE"  # 0.5초 이상 cone이 유지되면 전이
+                    print("[STATE] → CONE_DRIVE")
+            else:
+                cone_start_time = None  # cone이 사라지면 타이머 초기화
+            angle = 0.0  # 차선인식 미구현 상태: 직진 유지
+            
+        # -------------------------------
+        # FSM 상태: 라바콘 중심 추종 주행 상태
+        # 좌우 cone 중 가장 가까운 cone 기준 중심선 계산 후 따라감
+        # -------------------------------
+        elif state == "CONE_DRIVE":
+            angle = follow_cone_path_with_lidar(ranges)  # 라바콘 주행 조향각 계산
+
+            # cone이 안 보이면 → 종료 타이머 작동
+            if not is_cone_section(ranges):
+                if cone_start_time is None:
+                    cone_start_time = time.time()
+                elif time.time() - cone_start_time > 0.5:
+                    state = "LANE_FOLLOW"
+                    print("[STATE] → LANE_FOLLOW") # 이후 상태 개발하면 변경하기!!!
+                    cone_start_time = None  # 타이머 초기화
+            else:
+                cone_start_time = None  # cone 계속 보이면 타이머 리셋
+
+        # -------------------------------
+        # FSM 상태: 차선 추종 주행
+        # 차선 "LEFT", "RIGHT" 따라 좌/우 차선 주행
+        # 목표 차선 변경시 차선 변경 알고리즘 실행
+        # -------------------------------
+        elif state == "LANE_FOLLOW":
+            try:
+                angle = lane_detector.compute_lane_control(image)
+            except Exception as e:
+                rospy.logwarn(f"[LANE_FOLLOW] Lane detection failed: {e}")
+                angle = 0.0
+
+        
+        # -------------------------------
+        # 공통: 조향각 기반 속도 조정 및 모터 발행
+        # -------------------------------
+        speed = adjust_speed_by_angle(angle) # 조향각 크기에 따라 속도 결정
+        publish_drive(motor, angle, speed) # ROS 토픽으로 조향/속도 명령 전송
+
+        time.sleep(0.05)  # 루프 주기 설정
 
 #=============================================
 # 메인함수를 호출합니다.
