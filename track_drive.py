@@ -19,11 +19,16 @@ import matplotlib.pyplot as plt
 #=============================================
 # 사용할 모듈 import
 #=============================================
-from traffic_light_detector import detect_traffic_light
-from motor_util import publish_drive, adjust_speed_by_angle
-from cone_steering import follow_cone_path_with_lidar
-from cone_steering import is_cone_section
-from line_detect import LaneDetect
+try:
+    from traffic_light_detector import detect_traffic_light
+    from motor_util import publish_drive, adjust_speed_by_angle
+    from cone_steering import follow_cone_path_with_lidar, is_cone_section
+    from line_detect import LaneDetect
+    from obstacle_avoidance import detect_blocking_vehicle, get_avoid_direction_from_lane
+    print("=== IMPORT SUCCESS ===")
+except Exception as e:
+    print(f"IMPORT ERROR: {e}")
+
 
 
 #=============================================
@@ -65,6 +70,10 @@ def lidar_callback(data):
 #=============================================
 # 실질적인 메인 함수 
 #=============================================
+# 현재차선, 목표차선 전역변수로 저장장
+current_lane = "LEFT"  # 왼쪽 차선에서 출발
+target_lane = "LEFT"
+
 def start():
 
     global motor, image, ranges
@@ -198,10 +207,34 @@ def start():
         # -------------------------------
         elif state == "LANE_FOLLOW":
             try:
+                # 차선 추종 조향각 계산
                 angle = lane_detector.compute_lane_control(image)
+
+                # 장애물 탐지
+                if detect_blocking_vehicle(ranges):
+                    print("[OBSTACLE] 전방에 장애물 감지됨 → 차선 변경 시도")
+                    target_lane = get_avoid_direction_from_lane(current_lane)
+
+                # 차선 변경이 필요한 경우
+                if current_lane != target_lane:
+                    print(f"[LANE_CHANGE] {current_lane} → {target_lane} 차선 변경 중")
+
+                    #===============차선 변경 로직 구현하기=======================
+                    # 임시로 target_lane 방향으로 1초동안 각도 조정
+                    if target_lane == "LEFT":
+                        angle = -20.0
+                    else:
+                        angle = 20.0
+                    # 차선 변경 완료 조건 임시 설정 (나중에 차선 인식 기반으로 개선 가능)
+                    time.sleep(1.0)  # 변경 완료 대기
+                    #===========================================================
+
+                    current_lane = target_lane  # 현재 차선 업데이트
+                    print(f"[LANE_CHANGE] 변경 완료 → 현재 차선: {current_lane}")
             except Exception as e:
                 rospy.logwarn(f"[LANE_FOLLOW] Lane detection failed: {e}")
                 angle = 0.0
+
 
         
         # -------------------------------
