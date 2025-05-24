@@ -43,9 +43,9 @@ class LaneDetect:
         self.inv_transform_matrix = cv2.getPerspectiveTransform(self.destination, self.source) # 역변환 행렬도 추가 [추가]
 
         # PID 제어 파라미터 [추가]
-        self.Kp = 0.5  # 비례 이득 (Proportional Gain) - 튜닝 필요
-        self.Kd = 0.05 # 미분 이득 (Derivative Gain) - 튜닝 필요
-        self.Ki = 0.0001 # 적분 이득 (Integral Gain) - 튜닝 필요 (초기에는 작게 시작하거나 0)
+        self.Kp = 0.1  # 비례 이득 (Proportional Gain) - 튜닝 필요 일단 0.1
+        self.Kd = 5 # 미분 이득 (Derivative Gain) - 튜닝 필요
+        self.Ki = 0.000 # 적분 이득 (Integral Gain) - 튜닝 필요 (초기에는 작게 시작하거나 0)
 
         self.prev_error = 0.0      # 이전 횡방향 오차 (D-term 계산용)
         self.integral_error = 0.0  # 누적 횡방향 오차 (I-term 계산용)
@@ -56,7 +56,7 @@ class LaneDetect:
         self.warped_image_height = int(self.destination[1,1] - self.destination[0,1]) # 520 [추가]
 
         # 속도 설정 (XycarMotor 메시지 범위: -100 ~ 100) [추가]
-        self.TARGET_SPEED = 20 # 전진 속도 (튜닝 필요)
+        self.TARGET_SPEED = 15 # 전진 속도 (튜닝 필요)
 
     def warpping(self, image):
         bird_image = cv2.warpPerspective(image, self.transform_matrix, 
