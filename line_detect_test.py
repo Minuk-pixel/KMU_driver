@@ -43,7 +43,7 @@ class LaneDetect:
 
         # PID 제어 파라미터 [추가]
         self.Kp = 0.2  # 비례 이득 (Proportional Gain) - 튜닝 필요 일단 0.1
-        self.Kd = 1 # 미분 이득 (Derivative Gain) - 튜닝 필요
+        self.Kd = 3 # 미분 이득 (Derivative Gain) - 튜닝 필요
         self.Ki = 0.001 # 적분 이득 (Integral Gain) - 튜닝 필요 (초기에는 작게 시작하거나 0)
 
         self.prev_error = 0.0      # 이전 횡방향 오차 (D-term 계산용)
