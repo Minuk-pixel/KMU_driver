@@ -30,22 +30,21 @@ class LaneDetect:
         self.bridge = CvBridge()
         
         # 워핑 소스 포인트 (이전 답변에서 제공해주신 최종값)
-        self.source = np.float32([[211, 287], [61, 389], [425, 287], [574, 389]]) #
-        
+        self.source = np.float32([[173, 313], [61, 389], [461, 313], [574, 389]]) #
         # 워핑 목적지 포인트 재설정 (버드아이뷰 이미지의 폭을 일관성 있게 440으로 유지)
         # 이미지의 가로 중앙을 220 픽셀로 설정하기 위함
         # destination = np.float32([[0, 0], [0, 520], [480, 0], [480, 520]])
         # 현재 destination이 (480, 520)인데, 중앙이 240이 됩니다.
         # PID 계산의 중앙점과 일관성을 위해 destination의 x 범위를 0~440으로 맞추겠습니다.
         self.destination = np.float32([[0, 0], [0, 520], [440, 0], [440, 520]]) # 가로 폭 440, 세로 520 [수정]
-
+        # self.destination = np.float32([[0, 0], [0, 460], [440, 0], [440, 460]])
         self.transform_matrix = cv2.getPerspectiveTransform(self.source, self.destination)
         self.inv_transform_matrix = cv2.getPerspectiveTransform(self.destination, self.source) # 역변환 행렬도 추가 [추가]
 
         # PID 제어 파라미터 [추가]
-        self.Kp = 0.1  # 비례 이득 (Proportional Gain) - 튜닝 필요 일단 0.1
-        self.Kd = 5 # 미분 이득 (Derivative Gain) - 튜닝 필요
-        self.Ki = 0.000 # 적분 이득 (Integral Gain) - 튜닝 필요 (초기에는 작게 시작하거나 0)
+        self.Kp = 0.2  # 비례 이득 (Proportional Gain) - 튜닝 필요 일단 0.1
+        self.Kd = 1 # 미분 이득 (Derivative Gain) - 튜닝 필요
+        self.Ki = 0.001 # 적분 이득 (Integral Gain) - 튜닝 필요 (초기에는 작게 시작하거나 0)
 
         self.prev_error = 0.0      # 이전 횡방향 오차 (D-term 계산용)
         self.integral_error = 0.0  # 누적 횡방향 오차 (I-term 계산용)
@@ -239,7 +238,7 @@ class LaneDetect:
         cv2.imshow("Original Image (from Camera)", input_image)
         cv2.imshow("Warped Image", warped)
         #cv2.imshow("Filtered Image", filtered)
-        #cv2.imshow("Binary Image", binary)
+        cv2.imshow("Binary Image", binary)
         cv2.imshow("Lane Search Result", out_img) 
         
         return draw_info, out_img, cross_track_error, heading_error # 오차 값 추가 반환 [수정]
