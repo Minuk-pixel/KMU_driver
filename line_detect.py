@@ -20,10 +20,10 @@ class LaneDetect:
 
     def warpping(self, image):
         # 좌상 -> 좌하 -> 우상 -> 우하
-        source = np.float32([[214, 295], [1, 465], [421, 295], [633, 465]])
-        destination = np.float32([[0, 0], [0, 460], [250, 0], [250, 460]])
+        source = np.float32([[211, 287], [61, 389], [425, 287], [574, 389]])
+        destination = np.float32([[0, 0], [0, 520], [480, 0], [480, 520]])
         transform_matrix = cv2.getPerspectiveTransform(source, destination)
-        bird_image = cv2.warpPerspective(image, transform_matrix, (250, 460))
+        bird_image = cv2.warpPerspective(image, transform_matrix, (480, 520))
         return bird_image
 
     def color_filter(self, image):
@@ -50,58 +50,75 @@ class LaneDetect:
         leftbase = np.argmax(histogram[:midpoint])
         rightbase = np.argmax(histogram[midpoint:]) + midpoint
         return leftbase, rightbase
-        #return leftbase, rightbase, histogram
-
+    
     def slide_window_search(self, binary_warped, left_current, right_current):
-        nwindows = 15
+        nwindows = 15 # 윈도우 개수 (필요시 조정)
         window_height = np.int_(binary_warped.shape[0] / nwindows) 
         nonzero = binary_warped.nonzero()
         nonzero_y = np.array(nonzero[0])
         nonzero_x = np.array(nonzero[1])
-        margin = 30
-        minpix = 10  
+        
+        # 여기서 margin 값을 조정합니다.
+        # Warped Image에서 차선의 대략적인 폭을 고려하여 설정.
+        # 현재는 30이지만, 차선이 더 넓게 보인다면 늘리고, 좁게 보인다면 줄여야 합니다.
+        margin = 35 # 예시: 30에서 35로 늘려보세요. 
+
+        # 여기서 minpix 값을 조정합니다.
+        # 윈도우 내 최소 픽셀 수.
+        # 차선이 끊기면 줄이고, 노이즈가 많이 잡히면 늘립니다.
+        minpix = 25 # 예시: 10에서 15로 늘려보세요.
+
         left_lane = []
         right_lane = []
 
-        out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
+        # out_img는 디버깅을 위해 초록색 사각형을 그릴 이미지이므로 그대로 사용합니다.
+        out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255 
 
         for w in range(nwindows):
             win_y_low = binary_warped.shape[0] - (w + 1) * window_height
             win_y_high = binary_warped.shape[0] - w * window_height
+            
+            # 윈도우의 X축 범위는 current 값과 margin으로 결정됩니다.
             win_xleft_low = left_current - margin
             win_xleft_high = left_current + margin
             win_xright_low = right_current - margin
             win_xright_high = right_current + margin
 
+            # 디버깅용 사각형 그리기 (유지)
             cv2.rectangle(out_img, (win_xleft_low, win_y_low), (win_xleft_high, win_y_high), (0, 255, 0), 2)
             cv2.rectangle(out_img, (win_xright_low, win_y_low), (win_xright_high, win_y_high), (0, 255, 0), 2)
 
+            # 윈도우 내의 픽셀 찾기 (유지)
             good_left = ((nonzero_y >= win_y_low) & (nonzero_y < win_y_high) & 
-                        (nonzero_x >= win_xleft_low) & (nonzero_x < win_xleft_high)).nonzero()[0]
+                         (nonzero_x >= win_xleft_low) & (nonzero_x < win_xleft_high)).nonzero()[0]
             good_right = ((nonzero_y >= win_y_low) & (nonzero_y < win_y_high) & 
-                        (nonzero_x >= win_xright_low) & (nonzero_x < win_xright_high)).nonzero()[0]
+                          (nonzero_x >= win_xright_low) & (nonzero_x < win_xright_high)).nonzero()[0]
 
+            # 픽셀이 minpix보다 많으면 차선으로 간주하고 current 위치 업데이트 (유지)
             if len(good_left) > minpix:
                 left_lane.append(good_left)
-                left_current = np.int_(np.mean(nonzero_x[good_left]))  
+                left_current = np.int_(np.mean(nonzero_x[good_left]))   
 
             if len(good_right) > minpix:
                 right_lane.append(good_right)
                 right_current = np.int_(np.mean(nonzero_x[good_right]))
 
+        # 차선 픽셀들 연결 (유지)
         left_lane = np.concatenate(left_lane) if len(left_lane) > 0 else np.array([])
         right_lane = np.concatenate(right_lane) if len(right_lane) > 0 else np.array([])
+        
         leftx = nonzero_x[left_lane] if len(left_lane) > 0 else np.array([])
         lefty = nonzero_y[left_lane] if len(left_lane) > 0 else np.array([])
         rightx = nonzero_x[right_lane] if len(right_lane) > 0 else np.array([])
         righty = nonzero_y[right_lane] if len(right_lane) > 0 else np.array([])
 
-        if len(leftx) > 0 and len(lefty) > 0:
+        # 폴리노미얼 피팅 (유지)
+        if len(leftx) >= 2 and len(lefty) >= 2:
             left_fit = np.polyfit(lefty, leftx, 1)
         else:
             left_fit = [0, 0]
 
-        if len(rightx) > 0 and len(righty) > 0:
+        if len(rightx) >= 2 and len(righty) >= 2:
             right_fit = np.polyfit(righty, rightx, 1)
         else:
             right_fit = [0, 0]
@@ -110,11 +127,12 @@ class LaneDetect:
         left_fitx = left_fit[0] * ploty + left_fit[1]
         right_fitx = right_fit[0] * ploty + right_fit[1]
 
+        # 차선 그리기 (유지)
         for i in range(len(ploty)):
             cv2.circle(out_img, (int(left_fitx[i]), int(ploty[i])), 1, (255, 255, 0), -1)
             cv2.circle(out_img, (int(right_fitx[i]), int(ploty[i])), 1, (255, 255, 0), -1)
 
-        return {'left_fitx': left_fitx, 'right_fitx': right_fitx, 'ploty': ploty}, out_img
+        return {'left_fitx': left_fitx, 'right_fitx': right_fitx, 'ploty': ploty, 'left_fit': left_fit, 'right_fit': right_fit}, out_img
 
     def stanley_control(self, lane_info):
         try:
