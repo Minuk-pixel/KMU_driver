@@ -78,6 +78,7 @@ def start():
 
     global motor, image, ranges
     global start_signal_received
+    global current_lane, target_lane
     
     print("Start program --------------")
 
@@ -234,13 +235,15 @@ def start():
             except Exception as e:
                 rospy.logwarn(f"[LANE_FOLLOW] Lane detection failed: {e}")
                 angle = 0.0
-
-
         
         # -------------------------------
-        # 공통: 조향각 기반 속도 조정 및 모터 발행
+        # 조향각 기반 속도 조정 및 모터 발행
         # -------------------------------
-        speed = adjust_speed_by_angle(angle) # 조향각 크기에 따라 속도 결정
+        if state == "CONE_DRIVE": #CONE_DRIVE에서는 저속주행 필요
+            speed = 10
+        else:
+            speed = adjust_speed_by_angle(angle) # 조향각 크기에 따라 속도 결정
+        
         publish_drive(motor, angle, speed) # ROS 토픽으로 조향/속도 명령 전송
 
         time.sleep(0.05)  # 루프 주기 설정

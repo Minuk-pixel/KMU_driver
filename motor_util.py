@@ -15,7 +15,7 @@ import rospy
 # [clamp_angle 함수]
 # 조향각(angle)이 허용된 범위를 벗어나지 않도록 제한
 # -----------------------------------------
-def clamp_angle(angle, min_angle=-80, max_angle=80):
+def clamp_angle(angle, min_angle=-100, max_angle=100):
     return max(min(angle, max_angle), min_angle)
 
 # -----------------------------------------
@@ -35,7 +35,7 @@ def clamp_speed(speed, min_speed=-50, max_speed=100):
 # -----------------------------------------
 def adjust_speed_by_angle(angle, fast=40, mid=25, slow=10):
     abs_angle = abs(angle)  # 절댓값으로 판단
-    if abs_angle < 10:
+    if abs_angle < 50:
         return fast
     elif abs_angle < 25:
         return mid
