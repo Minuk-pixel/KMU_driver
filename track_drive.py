@@ -29,8 +29,6 @@ try:
 except Exception as e:
     print(f"IMPORT ERROR: {e}")
 
-
-
 #=============================================
 # 프로그램에서 사용할 변수, 저장공간 선언부
 #=============================================
@@ -115,7 +113,7 @@ def start():
     # 메인 루프 
     #=========================================
     # FSM 초기 상태: 신호등 대기
-    state = "WAIT_FOR_GREEN"
+    state = "LANE_FOLLOW"
 
     # 라바콘 진입 시점 기록 변수 (연속 조건 확인용)
     cone_start_time = None
@@ -196,7 +194,7 @@ def start():
                     cone_start_time = time.time()
                 elif time.time() - cone_start_time > 0.5:
                     state = "LANE_FOLLOW"
-                    print("[STATE] → LANE_FOLLOW") # 이후 상태 개발하면 변경하기!!!
+                    print("[STATE] → LANE_FOLLOW")
                     cone_start_time = None  # 타이머 초기화
             else:
                 cone_start_time = None  # cone 계속 보이면 타이머 리셋

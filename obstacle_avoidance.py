@@ -11,17 +11,18 @@ def preprocess_ranges(ranges, range_max=100.0):
 # 차량 회피 판단 함수
 # -------------------------------
 
-def detect_blocking_vehicle(ranges, threshold=3.0):
+def detect_blocking_vehicle(ranges, threshold=10.0):
     """
-    라이다 기준 정면(330~359도 + 0~30도)의 평균 거리값이 threshold 미만이면
+    라이다 기준 정면(345~359도 + 0~15도)의 최소 거리값이 threshold 미만이면
     전방에 차량이 막고 있다고 판단
     """
     # 유효하지 않은 값 전처리
     ranges = preprocess_ranges(ranges)
 
-    # 앞쪽 라이다 범위 (시계방향 기준: 330~359도와 0~30도)
-    front_left = ranges[330:360]
-    front_right = ranges[0:31]
+    # 앞쪽 라이다 범위
+    front_left = ranges[357:360]
+    front_right = ranges[0:3]
+    # print(f"left: {front_left} / right: {front_right}")
 
     # 두 범위 결합
     front = np.concatenate((front_left, front_right))

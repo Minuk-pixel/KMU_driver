@@ -2,11 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import cv2, numpy as np
-from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-from xycar_msgs.msg import XycarMotor
-
-
 
 class LaneDetect:
     def __init__(self):
@@ -115,34 +111,7 @@ class LaneDetect:
             cv2.circle(out_img, (int(right_fitx[i]), int(ploty[i])), 1, (255, 255, 0), -1)
 
         return {'left_fitx': left_fitx, 'right_fitx': right_fitx, 'ploty': ploty}, out_img
-
-    def stanley_control(self, lane_info):
-        try:
-            # 차선 중심 계산
-            center_x = (lane_info.left_x + lane_info.right_x) / 2.0
-            car_center = 0.0  # 영상 중심을 기준으로 차량은 중앙에 있다고 가정
-
-            # 크로스트랙 에러 (m 단위로 정규화)
-            cte = (center_x - car_center) / 130.0 * (self.lane_width / 2)
-
-            # 헤딩 오차 (차선 각도의 평균)
-            heading_error = (lane_info.left_slope + lane_info.right_slope) / 2.0
-
-            # Stanley 제어 공식
-            steer_correction = np.arctan2(self.k_e * cte, self.k_v + self.base_speed)
-            steer_out = heading_error + steer_correction
-
-            # 조향 각도 제한
-            steer_out = np.clip(steer_out, -self.max_steer, self.max_steer)
-
-            # 속도 조절 (크로스트랙 에러 기반)
-            throttle_out = self.base_speed * (1.0 - min(abs(cte), 1.0))
-
-            return throttle_out, steer_out
-
-        except Exception as e:
-            return 0.0, 0.0
-
+    
     # compute_lane_control 함수 추가
     def compute_lane_control(self, image):
         # 기존 process_image 내용 재사용
