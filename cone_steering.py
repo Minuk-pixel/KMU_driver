@@ -69,11 +69,12 @@ def follow_cone_path_with_lidar(ranges, fallback_angle=0.0):
 
     # ------------------------------
     # 6. 조향각 계산
-    # y 평균 × 보정계수 (200)
-    # 조향각 제한 범위 ±75도
+    # y 평균 × 보정계수
+    # 조향각 제한 범위 지정
     # ------------------------------
     y_mean = np.mean(closest_y)
 
+    # 단계별 조향각 gain 조절
     if y_mean < 0.5:
         steering_angle = - np.clip(y_mean * 200, -100.0, 100.0)
     elif y_mean < 1.3:

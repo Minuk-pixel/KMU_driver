@@ -36,9 +36,6 @@ image = np.empty(shape=[0])  # 카메라 이미지를 담을 변수
 ranges = None  # 라이다 데이터를 담을 변수
 motor = None  # 모터노드
 motor_msg = XycarMotor()  # 모터 토픽 메시지
-Fix_Speed = 10  # 모터 속도 고정 상수값 
-new_angle = 0  # 모터 조향각 초기값
-new_speed = Fix_Speed  # 모터 속도 초기값
 bridge = CvBridge()  # OpenCV 함수를 사용하기 위한 브릿지 
 start_signal_received = False  # FSM 상태
 
@@ -113,7 +110,7 @@ def start():
     # 메인 루프 
     #=========================================
     # FSM 초기 상태: 신호등 대기
-    state = "LANE_FOLLOW"
+    state = "WAIT_FOR_GREEN"
 
     # 라바콘 진입 시점 기록 변수 (연속 조건 확인용)
     cone_start_time = None
@@ -238,7 +235,7 @@ def start():
         # 조향각 기반 속도 조정 및 모터 발행
         # -------------------------------
         if state == "CONE_DRIVE": #CONE_DRIVE에서는 저속주행 필요
-            speed = 10
+            speed = 9.0
         else:
             speed = adjust_speed_by_angle(angle) # 조향각 크기에 따라 속도 결정
         
