@@ -23,7 +23,7 @@ try:
     from traffic_light_detector import detect_traffic_light
     from motor_util import publish_drive, adjust_speed_by_angle
     from cone_steering import follow_cone_path_with_lidar, is_cone_section
-    from drive_test import LaneDetect
+    from lane_pid import LaneDetect
     from obstacle_avoidance import detect_blocking_vehicle, get_avoid_direction_from_lane
     print("=== IMPORT SUCCESS ===")
 except Exception as e:

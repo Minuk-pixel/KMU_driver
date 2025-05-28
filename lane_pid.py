@@ -16,6 +16,7 @@ def usbcam_callback(data):
 
 class LaneDetect:
     def __init__(self):
+        self.current_lane = "UNKNOWN"
         self.bridge = CvBridge()
         self.source = np.float32([[173, 313], [61, 389], [463, 313], [574, 389]])
         self.destination = np.float32([[0, 0], [0, 520], [440, 0], [440, 520]])
@@ -45,20 +46,35 @@ class LaneDetect:
         return cv2.warpPerspective(image, self.transform_matrix, (440, 520))
 
     def color_filter(self, image):
-        if len(image.shape) == 2:
-            image_bgr = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-        else:
-            image_bgr = image
+        image_bgr = image if len(image.shape) == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
         hls = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HLS)
-        white_mask = cv2.inRange(image_bgr, np.array([230,230,230]), np.array([255,255,255]))
-        yellow_mask = cv2.inRange(hls, np.array([15,100,150]), np.array([35,255,255]))
+        white_mask = cv2.inRange(image_bgr, np.array([230, 230, 230]), np.array([255, 255, 255]))
+        yellow_mask = cv2.inRange(hls, np.array([15, 100, 150]), np.array([35, 255, 255]))
         combined_mask = cv2.bitwise_or(white_mask, yellow_mask)
-        return cv2.bitwise_and(image_bgr, image_bgr, mask=combined_mask)
+        masked = cv2.bitwise_and(image_bgr, image_bgr, mask=combined_mask)
+
+        self.last_mask = white_mask  # 현재 프레임의 흰색 마스크 저장
+        return masked
+
+    def update_current_lane(self):
+        h, w = self.last_mask.shape
+        left_half = self.last_mask[:, :w//2]
+        right_half = self.last_mask[:, w//2:]
+
+        left_detected = cv2.countNonZero(left_half) > 50
+        right_detected = cv2.countNonZero(right_half) > 50
+
+        if left_detected and not right_detected:
+            self.current_lane = "LEFT"
+        elif right_detected and not left_detected:
+            self.current_lane = "RIGHT"
+        else:
+            self.current_lane = "UNKNOWN"
 
     def plothistogram(self, image):
         histogram = np.sum(image[:, :], axis=0)
-        midpoint = np.int_(histogram.shape[0]/2)
+        midpoint = np.int_(histogram.shape[0] / 2)
         current_left_base = np.argmax(histogram[:midpoint])
         current_right_base = np.argmax(histogram[midpoint:]) + midpoint
 
@@ -72,7 +88,8 @@ class LaneDetect:
                 if abs(current_left_base - self.prev_left_base) > 100:
                     leftbase = self.prev_left_base
                 else:
-                    leftbase = int(self.base_smoothing_factor * self.prev_left_base + (1 - self.base_smoothing_factor) * current_left_base)
+                    leftbase = int(self.base_smoothing_factor * self.prev_left_base +
+                                   (1 - self.base_smoothing_factor) * current_left_base)
 
         rightbase = current_right_base
         if histogram[current_right_base] < MIN_PEAK_HEIGHT:
@@ -82,41 +99,39 @@ class LaneDetect:
                 if abs(current_right_base - self.prev_right_base) > 100:
                     rightbase = self.prev_right_base
                 else:
-                    rightbase = int(self.base_smoothing_factor * self.prev_right_base + (1 - self.base_smoothing_factor) * current_right_base)
+                    rightbase = int(self.base_smoothing_factor * self.prev_right_base +
+                                    (1 - self.base_smoothing_factor) * current_right_base)
 
         self.prev_left_base = leftbase
         self.prev_right_base = rightbase
         return leftbase, rightbase
 
-    def slide_window_search(self, binary_warped, left_current, right_current):
+    def slide_window_search(self, binary, left_base, right_base):
         nwindows = 30
-        window_height = np.int_(binary_warped.shape[0] / nwindows)
-        nonzero = binary_warped.nonzero()
-        nonzero_y = np.array(nonzero[0])
-        nonzero_x = np.array(nonzero[1])
-        margin = 80
-        minpix = 30
-
-        left_lane_inds = []
-        right_lane_inds = []
+        window_height = np.int_(binary.shape[0] / nwindows)
+        nonzero = binary.nonzero()
+        nonzeroy, nonzerox = nonzero[0], nonzero[1]
+        margin, minpix = 80, 30
+        left_current, right_current = left_base, right_base
+        left_lane_inds, right_lane_inds = [], []
 
         for window in range(nwindows):
-            win_y_low = binary_warped.shape[0] - (window + 1) * window_height
-            win_y_high = binary_warped.shape[0] - window * window_height
+            win_y_low = binary.shape[0] - (window + 1) * window_height
+            win_y_high = binary.shape[0] - window * window_height
             win_xleft_low = left_current - margin
             win_xleft_high = left_current + margin
             win_xright_low = right_current - margin
             win_xright_high = right_current + margin
 
-            good_left_inds = ((nonzero_y >= win_y_low) & (nonzero_y < win_y_high) &
-                              (nonzero_x >= win_xleft_low) & (nonzero_x < win_xleft_high)).nonzero()[0]
-            good_right_inds = ((nonzero_y >= win_y_low) & (nonzero_y < win_y_high) &
-                               (nonzero_x >= win_xright_low) & (nonzero_x < win_xright_high)).nonzero()[0]
+            good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
+                              (nonzerox >= win_xleft_low) & (nonzerox < win_xleft_high)).nonzero()[0]
+            good_right_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
+                               (nonzerox >= win_xright_low) & (nonzerox < win_xright_high)).nonzero()[0]
 
             if len(good_left_inds) > minpix:
-                left_current = np.int_(np.mean(nonzero_x[good_left_inds]))
+                left_current = np.int_(np.mean(nonzerox[good_left_inds]))
             if len(good_right_inds) > minpix:
-                right_current = np.int_(np.mean(nonzero_x[good_right_inds]))
+                right_current = np.int_(np.mean(nonzerox[good_right_inds]))
 
             left_lane_inds.append(good_left_inds)
             right_lane_inds.append(good_right_inds)
@@ -124,10 +139,10 @@ class LaneDetect:
         left_lane_inds = np.concatenate(left_lane_inds)
         right_lane_inds = np.concatenate(right_lane_inds)
 
-        leftx = nonzero_x[left_lane_inds]
-        lefty = nonzero_y[left_lane_inds]
-        rightx = nonzero_x[right_lane_inds]
-        righty = nonzero_y[right_lane_inds]
+        leftx = nonzerox[left_lane_inds]
+        lefty = nonzeroy[left_lane_inds]
+        rightx = nonzerox[right_lane_inds]
+        righty = nonzeroy[right_lane_inds]
 
         left_fit = self.prev_left_fit
         right_fit = self.prev_right_fit
@@ -140,7 +155,7 @@ class LaneDetect:
             right_fit = np.polyfit(righty, rightx, 1)
             self.prev_right_fit = self.fit_smoothing_factor * self.prev_right_fit + (1 - self.fit_smoothing_factor) * right_fit
 
-        ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
+        ploty = np.linspace(0, binary.shape[0] - 1, binary.shape[0])
         left_fitx = left_fit[0] * ploty + left_fit[1]
         right_fitx = right_fit[0] * ploty + right_fit[1]
 
@@ -149,6 +164,7 @@ class LaneDetect:
     def compute_lane_control(self, input_image):
         warped = self.warpping(input_image)
         filtered = self.color_filter(warped)
+        self.update_current_lane()  # ✅ 현재 차선 업데이트
         gray = cv2.cvtColor(filtered, cv2.COLOR_BGR2GRAY)
         _, binary = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
         left_base, right_base = self.plothistogram(binary)
@@ -181,9 +197,13 @@ class LaneDetect:
                 cte = 0.0
                 heading = 0.0
 
+        print(f"[INFO] current_lane = {self.current_lane}")
+
         cv2.imshow("Binary Image", binary)
         cv2.waitKey(1)
+
         return draw_info, cte, heading, self.fallback_active
+
 
 def main():
     global image, motor_pub
