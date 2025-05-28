@@ -177,7 +177,7 @@ def start():
         # -------------------------------
         elif state == "CONE_DRIVE":
             angle = follow_cone_path_with_lidar(ranges)  # 라바콘 주행 조향각 계산
-            speed = 10 # 라바콘 주행 속도
+            speed = 9 # 라바콘 주행 속도
 
             # cone 사라짐 확인 + 타이머 시작
             if not is_cone_section(ranges):

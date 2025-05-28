@@ -73,8 +73,15 @@ def follow_cone_path_with_lidar(ranges, fallback_angle=0.0):
     # 조향각 제한 범위 ±75도
     # ------------------------------
     y_mean = np.mean(closest_y)
-    steering_angle = - np.clip(y_mean * 200, -75.0, 75.0)      # 최종 조향각 계산
 
-    print(f"y_vals: {[f'{y:.2f}' for y in closest_y]}")
+    if y_mean < 0.5:
+        steering_angle = - np.clip(y_mean * 200, -100.0, 100.0)
+    elif y_mean < 1.3:
+        steering_angle = - np.clip(y_mean * 120, -100.0, 100.0)
+    else:
+        steering_angle = - np.clip(y_mean * 40, -100.0, 100.0)
+
+
+    print(f"y_vals: {[f'{y:.2f}' for y in closest_y]}", y_mean, steering_angle)
 
     return steering_angle
