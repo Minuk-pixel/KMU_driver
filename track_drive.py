@@ -23,7 +23,7 @@ try:
     from traffic_light_detector import detect_traffic_light
     from motor_util import publish_drive, adjust_speed_by_angle
     from cone_steering import follow_cone_path_with_lidar, is_cone_section
-    # from line_detect import LaneDetect # Removed
+    from drive_test import LaneDetect
     from obstacle_avoidance import detect_blocking_vehicle, get_avoid_direction_from_lane
     print("=== IMPORT SUCCESS ===")
 except Exception as e:
@@ -35,6 +35,7 @@ except Exception as e:
 image = np.empty(shape=[0])  # 카메라 이미지를 담을 변수
 ranges = None  # 라이다 데이터를 담을 변수
 motor = None  # 모터노드
+lane_follower = LaneDetect()
 motor_msg = XycarMotor()  # 모터 토픽 메시지
 Fix_Speed = 40  # 모터 속도 고정 상수값 
 new_angle = 0  # 모터 조향각 초기값
@@ -178,16 +179,25 @@ def start():
             angle = follow_cone_path_with_lidar(ranges)  # 라바콘 주행 조향각 계산
             speed = 10 # 라바콘 주행 속도
 
-            # cone이 안 보이면 → 종료 타이머 작동
+            # cone 사라짐 확인 + 타이머 시작
             if not is_cone_section(ranges):
                 if cone_start_time is None:
                     cone_start_time = time.time()
-                elif time.time() - cone_start_time > 0.5:
-                    state = "LANE_FOLLOW"
-                    print("[STATE] → LANE_FOLLOW")
-                    cone_start_time = None  # 타이머 초기화
+
+                elif time.time() - cone_start_time > 2:
+                    try:
+                        lane_checker = LaneDetect()
+                        draw_info, *_ = lane_checker.compute_lane_control(image)
+
+                        if draw_info is not None:
+                            print("[STATE] → LANE_FOLLOW (Cone done + Lane detected)")
+                            state = "LANE_FOLLOW"
+                            cone_start_time = None
+
+                    except Exception as e:
+                        print(f"[ERROR] Lane check failed before transition: {e}")
             else:
-                cone_start_time = None  # cone 계속 보이면 타이머 리셋
+                cone_start_time = None
 
         # -------------------------------
         # FSM 상태: 차선 추종 주행
@@ -195,36 +205,30 @@ def start():
         # 목표 차선 변경시 차선 변경 알고리즘 실행
         # -------------------------------
         elif state == "LANE_FOLLOW":
-            try:
-                angle = 0.0 # 차선 감지 기능 제거 시 기본 직진
+            draw_info, cte, heading, fallback = lane_follower.compute_lane_control(image)
 
-                # 장애물 탐지
-                if detect_blocking_vehicle(ranges):
-                    print("[OBSTACLE] 전방에 장애물 감지됨 → 차선 변경 시도")
-                    target_lane = get_avoid_direction_from_lane(current_lane)
+            # PID 제어
+            p = lane_follower.Kp * cte
+            lane_follower.integral_error += cte * 0.05  # 루프 주기 고려
+            i = lane_follower.Ki * lane_follower.integral_error
+            d = lane_follower.Kd * heading if abs(heading) > 0.001 else 0.0
+            steer = p + i + d
 
-                # 차선 변경이 필요한 경우
-                if current_lane != target_lane:
-                    print(f"[LANE_CHANGE] {current_lane} → {target_lane} 차선 변경 중")
+            if fallback:
+                steer *= 1.2
+                if abs(steer) < 15:
+                    steer = 15 if steer >= 0 else -15
+                speed = 10
+            else:
+                speed = lane_follower.TARGET_SPEED
 
-                    #===============차선 변경 로직 구현하기=======================
-                    # 임시로 target_lane 방향으로 1초동안 각도 조정
-                    if target_lane == "LEFT":
-                        angle = -20.0
-                    else:
-                        angle = 20.0
-                    # 차선 변경 완료 조건 임시 설정 (나중에 차선 인식 기반으로 개선 가능)
-                    time.sleep(1.0)  # 변경 완료 대기
-                    #===========================================================
+            # 조향 제한
+            steer = max(-100, min(100, steer))
 
-                    current_lane = target_lane  # 현재 차선 업데이트
-                    print(f"[LANE_CHANGE] 변경 완료 → 현재 차선: {current_lane}")
-            except Exception as e:
-                rospy.logwarn(f"[LANE_FOLLOW] Lane detection failed: {e}")
-                angle = 0.0
+            angle = steer  # 최종 조향값 적용
+
             
-            # LANE_FOLLOW 상태의 속도
-            speed = adjust_speed_by_angle(angle) # 조향각에 따라 속도 조정
+
 
         # -------------------------------
         # 최종 모터 발행
