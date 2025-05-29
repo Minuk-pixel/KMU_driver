@@ -14,7 +14,7 @@ def preprocess_ranges(ranges, range_max=100.0):
 # -------------------------------
 
 class BlockingVehicleDetector:
-    def __init__(self, threshold=80.0, hold_time=2.0):
+    def __init__(self, threshold=70.0, hold_time=2.0):
         self.threshold = threshold
         self.hold_time = hold_time
         self.last_block_time = None
@@ -23,15 +23,15 @@ class BlockingVehicleDetector:
     def is_blocking(self, ranges):
         # 전처리
         ranges = preprocess_ranges(ranges)
-        front = np.concatenate((ranges[358:360], ranges[0:2]))
-        avg_dist = np.mean(front)
+        front = np.concatenate((ranges[357:360], ranges[0:3]))
+        avg_dist = np.min(front)
 
         if avg_dist < self.threshold:
             now = time.time()
             if self.last_block_time is None:
                 self.last_block_time = now
                 return False
-            elif now - self.last_block_time >= self.hold_time:
+            elif now - self.last_block_time >= self.hold_time and avg_dist < 30:
                 self.prev_blocking = True
                 return True
             else:

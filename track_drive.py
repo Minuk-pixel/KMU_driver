@@ -120,18 +120,18 @@ def start():
 
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         cv2.imshow("original", image)
-        cv2.imshow("gray", gray)
+        # cv2.imshow("gray", gray)
 
         cv2.waitKey(1)
 
-        if ranges is not None:      
-            angles = np.linspace(0,2*np.pi, len(ranges))+np.pi/2
-            x = ranges * np.cos(angles)
-            y = ranges * np.sin(angles)
+        # if ranges is not None:      
+        #     angles = np.linspace(0,2*np.pi, len(ranges))+np.pi/2
+        #     x = ranges * np.cos(angles)
+        #     y = ranges * np.sin(angles)
 
-            lidar_points.set_data(x, y)
-            fig.canvas.draw_idle()
-            plt.pause(0.01) 
+        #     lidar_points.set_data(x, y)
+        #     fig.canvas.draw_idle()
+        #     plt.pause(0.01) 
         
         angle = 0.0 # 대부분의 상태에서 기본 조향각을 0으로 설정
         speed = 0.0 # 기본 속도를 0으로 설정, 각 상태 로직에 따라 오버라이드 됨
@@ -279,7 +279,6 @@ def start():
                 steer = max(-100, min(100, steer))
                 lane_follower.prev_angle = steer
                 angle = steer  # 최종 조향값 적용
-                print(f"LANE_FOLLOW angle: {angle}")
             except Exception as e:
                 rospy.logwarn(f"[LANE_FOLLOW] Lane detection failed: {e}")
                 angle = 0.0
@@ -288,9 +287,11 @@ def start():
         # 조향각 기반 속도 조정 및 모터 발행
         # -------------------------------
         if state == "STRAIGHT_LANE_FOLLOW":
-            speed = 60.0
+            speed = 55.0
         elif state == "CONE_DRIVE": #CONE_DRIVE에서는 저속주행 필요
             speed = 12.5
+        elif state == "LANE_FOLLOW_OBSTACLE":
+            speed = 40
         else:
             speed = adjust_speed_by_angle(angle) # 조향각 크기에 따라 속도 결정
 

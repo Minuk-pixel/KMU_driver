@@ -40,8 +40,8 @@ class LaneDetect:
         self.transform_matrix = cv2.getPerspectiveTransform(self.source, self.destination)
 
         # PID 제어용 파라미터
-        self.Kp = 0.68
-        self.Kd = 7
+        self.Kp = 0.71
+        self.Kd = 6.845
         self.Ki = 0.001
         self.prev_error = 0.0
         self.integral_error = 0.0
@@ -236,7 +236,7 @@ class LaneDetect:
                 heading = draw_info['left_fit'][0]
             elif right_detected:
                 right_x = draw_info['right_fit'][0] * bottom_y + draw_info['right_fit'][1]
-                lane_center = right_x - 100 if right_x > self.warped_center_x else right_x + 100
+                lane_center = right_x - 100 if right_x > self.warped_center_x else right_x +100
                 cte = lane_center - self.warped_center_x
                 heading = draw_info['right_fit'][0]
             else:
@@ -244,7 +244,7 @@ class LaneDetect:
                 heading = 0.0
 
         print(f"[INFO] current_lane = {self.current_lane}")
-        cv2.imshow("Binary Image", binary)
-        cv2.waitKey(1)
+        # cv2.imshow("Binary Image", binary)
+        # cv2.waitKey(1)
 
         return draw_info, cte, heading, self.fallback_active
