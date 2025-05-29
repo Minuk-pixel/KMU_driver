@@ -82,7 +82,6 @@ def follow_cone_path_with_lidar(ranges, fallback_angle=0.0):
     else:
         steering_angle = - np.clip(y_mean * 40, -100.0, 100.0)
 
-
     print(f"y_vals: {[f'{y:.2f}' for y in closest_y]}", y_mean, steering_angle)
 
     return steering_angle
