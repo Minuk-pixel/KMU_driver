@@ -201,14 +201,8 @@ def start():
         # -------------------------------
         elif state == "LANE_FOLLOW_OBSTACLE":
             try:
-                draw_info, cte, heading, fallback = lane_follower.compute_lane_control(image)
+                draw_info, fallback, steer = lane_follower.compute_lane_control(image)
 
-                # PID 제어
-                p = lane_follower.Kp * cte
-                lane_follower.integral_error += cte * 0.05  # 루프 주기 고려
-                i = lane_follower.Ki * lane_follower.integral_error
-                d = lane_follower.Kd * heading if abs(heading) > 0.001 else 0.0
-                steer = p + i + d
 
                 if fallback:
                     steer = lane_follower.prev_angle
@@ -229,7 +223,7 @@ def start():
                     print(f"[LANE_CHANGE] {lane_follower.current_lane} → {target_lane} 차선 변경 중")
 
                     #===============차선 변경 로직=======================
-                    # 임시로 target_lane 방향으로 1초동안 각도 조정
+                    # target_lane 방향으로 1.6초동안 각도 조정
                     if target_lane == "LEFT":
                         angle = - 40.0
                         speed = 40.0
@@ -238,7 +232,6 @@ def start():
                         angle = 40.0
                         speed = 40.0
                         publish_drive(motor, angle, speed)
-                    # 차선 변경 완료 조건 임시 설정 (나중에 차선 인식 기반으로 개선 가능)
                     time.sleep(1.6)  # 변경 완료 대기
 
                     # 차선 합류
@@ -251,34 +244,25 @@ def start():
                         speed = 40.0
                         publish_drive(motor, angle, speed)
                     time.sleep(1.6)
-                    state = "LANE_FOLLOW"
-                    print(f"[LANE_CHANGE] 변경 완료 → 현재 차선: {lane_follower.current_lane}")
-                    
-            except Exception as e:
-                rospy.logwarn(f"[LANE_FOLLOW] Lane detection failed: {e}")
-                angle = 0.0
 
-        # -------------------------------
-        # FSM 상태: 차선 추종 주행, 차선 변경 없음
-        # -------------------------------
-        elif state == "LANE_FOLLOW":
-            try:
-                draw_info, cte, heading, fallback = lane_follower.compute_lane_control(image)
+                    print("[LANE_CHANGE] 변경 완료")
 
-                # PID 제어
-                p = lane_follower.Kp * cte
-                lane_follower.integral_error += cte * 0.05  # 루프 주기 고려
-                i = lane_follower.Ki * lane_follower.integral_error
-                d = lane_follower.Kd * heading if abs(heading) > 0.001 else 0.0
-                steer = p + i + d
+                    front = np.concatenate((ranges[345:360], ranges[0:15]))
+                    min_dist = np.min(front)
+                    if min_dist < 50: # 차선 변경 뒤 앞에 차가 있다면 옆 차 추월
+                        print("추월 중...")
+                        start_time = time.time()
+                        while time.time() - start_time < 4.5:
+                            try:
+                                draw_info, fallback, steer = lane_follower.compute_lane_control(image)
+                                angle = steer/5 # 고속주행 고려해 조향각 /5
+                                speed = 60
+                                publish_drive(motor, angle, speed)
+                            except Exception as e:
+                                rospy.logwarn(f"[추월 중 PID 실패] {e}")
+                                publish_drive(motor, 0.0, 0.0)  # 추월 중 안전 정지
+                            time.sleep(0.05)  # 약 20Hz 주기
 
-                if fallback or lane_follower.current_lane == "UNKNOWN":
-                    steer = lane_follower.prev_angle
-
-                # 조향 제한
-                steer = max(-100, min(100, steer))
-                lane_follower.prev_angle = steer
-                angle = steer  # 최종 조향값 적용
             except Exception as e:
                 rospy.logwarn(f"[LANE_FOLLOW] Lane detection failed: {e}")
                 angle = 0.0

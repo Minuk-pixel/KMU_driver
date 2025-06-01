@@ -14,7 +14,7 @@ def preprocess_ranges(ranges, range_max=100.0):
 # -------------------------------
 
 class BlockingVehicleDetector:
-    def __init__(self, threshold=70.0, hold_time=2.0):
+    def __init__(self, threshold=50.0, hold_time=1.0):
         self.threshold = threshold
         self.hold_time = hold_time
         self.last_block_time = None

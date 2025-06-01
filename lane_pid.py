@@ -243,8 +243,23 @@ class LaneDetect:
                 cte = 0.0
                 heading = 0.0
 
+            # PID 조향각 계산
+        p = self.Kp * cte
+        self.integral_error += cte * 0.05
+        i = self.Ki * self.integral_error
+        d = self.Kd * heading if abs(heading) > 0.001 else 0.0
+        steer = p + i + d
+
+        # fallback 시 이전 값 유지
+        if self.fallback_active:
+            steer = self.prev_angle
+        else:
+            self.prev_angle = steer
+
+        # 조향 제한
+        steer = max(-100, min(100, steer))
         print(f"[INFO] current_lane = {self.current_lane}")
         # cv2.imshow("Binary Image", binary)
         # cv2.waitKey(1)
 
-        return draw_info, cte, heading, self.fallback_active
+        return draw_info, self.fallback_active, steer
