@@ -15,7 +15,7 @@ cv_image = np.empty(shape=[0]) # 원본 카메라 이미지 저장 공간
 warped_image = np.empty(shape=[0]) # 워핑된 이미지 저장 공간
 
 # 워핑 소스 포인트 (원본 이미지)
-SOURCE_POINTS = np.float32([[173, 313], [61, 389], [461, 313], [574, 389]])
+SOURCE_POINTS = np.float32([[107, 335], [11, 389], [528, 335], [624, 389]])
 
 # 워핑 목적지 포인트 (버드아이뷰 이미지)
 DESTINATION_POINTS = np.float32([[0, 0], [0, 520], [440, 0], [440, 520]])

@@ -35,7 +35,7 @@ class LaneDetect:
 
         # 이미지 BEV 변환용 파라미터 (소스/타겟 좌표)
         self.bridge = CvBridge()
-        self.source = np.float32([[146, 313], [11, 389], [490, 313], [624, 389]])
+        self.source = np.float32([[107, 335], [11, 389], [528, 335], [624, 389]])
         self.destination = np.float32([[0, 0], [0, 520], [440, 0], [440, 520]])
         self.transform_matrix = cv2.getPerspectiveTransform(self.source, self.destination)
 

@@ -290,8 +290,6 @@ def start():
             speed = 55.0
         elif state == "CONE_DRIVE": #CONE_DRIVE에서는 저속주행 필요
             speed = 12.5
-        elif state == "LANE_FOLLOW_OBSTACLE":
-            speed = 40
         else:
             speed = adjust_speed_by_angle(angle) # 조향각 크기에 따라 속도 결정
 
