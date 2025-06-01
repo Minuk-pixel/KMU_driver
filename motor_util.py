@@ -30,12 +30,14 @@ def clamp_speed(speed, min_speed=-50, max_speed=100):
 # 조향각이 클수록 회전 반경이 작아지므로, 차량의 안정성을 위해 감속한다
 # 이 함수를 통해 조향각 기반의 동적 속도 제어가 가능하다.
 # -----------------------------------------
-def adjust_speed_by_angle(angle, fast=40, mid=35):
+def adjust_speed_by_angle(angle, fast=40, mid=35, slow=30):
     abs_angle = abs(angle)  # 절댓값으로 판단
     if abs_angle < 40:
         return fast
-    else:
+    elif abs_angle < 60:
         return mid
+    else:
+        return slow
 
 # -----------------------------------------
 # [publish_drive 함수]

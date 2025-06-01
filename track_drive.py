@@ -247,9 +247,9 @@ def start():
 
                     print("[LANE_CHANGE] 변경 완료")
 
-                    front = np.concatenate((ranges[345:360], ranges[0:15]))
+                    front = np.concatenate((ranges[350:360], ranges[0:10]))
                     min_dist = np.min(front)
-                    if min_dist < 50: # 차선 변경 뒤 앞에 차가 있다면 옆 차 추월
+                    if 10 < min_dist < 50: # 차선 변경 뒤 앞에 차가 있다면 옆 차 추월
                         print("추월 중...")
                         start_time = time.time()
                         while time.time() - start_time < 4.5:
