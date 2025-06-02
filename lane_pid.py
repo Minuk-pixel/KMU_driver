@@ -40,7 +40,7 @@ class LaneDetect:
         self.transform_matrix = cv2.getPerspectiveTransform(self.source, self.destination)
 
         # PID 제어용 파라미터
-        self.Kp = 0.71
+        self.Kp = 0.705
         self.Kd = 6.845
         self.Ki = 0.001
         self.prev_error = 0.0
